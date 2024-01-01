@@ -674,32 +674,6 @@ export default function Home(){
     onMouseMove={e => handlePanning(e as unknown as MouseEvent)}/>;
   };
 
-  const LineBetweenPoints: FC<{target:{pos:[number, number];size:[number,number]}; point2:[number, number]; idx:number}> = ({ target, point2, idx }) => {
-    let x:number = target.pos[0] + (idx == 1 ? target.size[0] : 0);
-    let y:number = target.pos[1] + target.size[1]/2;
-    const deltaX = point2[0] - x;
-    const deltaY = point2[1] - y;
-    const gap = 12;
-    const length = Math.sqrt(deltaX * deltaX + deltaY * deltaY) - gap;
-    const angle = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
-    const dx = x + Math.cos(angle * Math.PI / 180) * (gap/2);
-    const dy = y + Math.sin(angle * Math.PI / 180) * (gap/2);
-
-    const lineStyle: CSSProperties = {
-      width: `${length}px`,
-      transform: `rotate(${angle}deg)`,
-      transformOrigin: 'left',
-      position: 'absolute',
-      left: `${dx}px`,
-      top: `${dy}px`,
-      borderRadius: '10px',
-      height: `${2*viewport[2]}px`, // 선의 두께
-      backgroundImage: `linear-gradient(to ${idx ? 'right' : 'left'}, #FF0, #0FF)`,
-    };
-
-    return <div style={lineStyle} />;
-  };
-
   const renderLines = () => {
     return nodes.filter(v => {
       let {pos, size} = getNodeTransform(v)
@@ -716,7 +690,7 @@ export default function Home(){
           let target = getNodeTransform(tailnode)
           let x = target.pos[0]
           let y = target.pos[1] + target.size[1]/2
-          return <LineBetweenPoints target={me} point2={[x, y]} idx={1} key={ii}/>
+          return <LineBetweenPoints target={me} point2={[x, y]} idx={1} key={ii} zoom={viewport[2]}/>
         } else {
           return null
         }
@@ -732,6 +706,7 @@ export default function Home(){
       target={getNodeTransform(nodes.find(v => v.id === targetNode[0]) as Node)}
       point2={[dragStart[0] + dragOffset[0], dragStart[1] + dragOffset[1]]}
       idx={targetNode[1]}
+      zoom={viewport[2]}
     />}
     {contextMenu(colorMap, contextMenuPosition, contextMenuVisible, createNode, setContextMenuVisible)}
     {isDragging && mouseDraggingTarget === 'bg' && !panning && <div className="bg-[#ffffff22] absolute border border-white rounded-md"
@@ -741,7 +716,7 @@ export default function Home(){
       width: Math.abs(dragOffset[0]),
       height: Math.abs(dragOffset[1]),
     }}></div>}
-    {!navbarVisible && <div className="absolute bg-white bg-opacity-10 right-1 top-1 p-1 rounded-md">Press "Tab" to show menu.</div>}
+    {!navbarVisible && <div className="absolute bg-white bg-opacity-10 right-1 top-1 p-1 rounded-md">Press &quot;Tab&quot; to show menu.</div>}
     {navbarVisible && navbar(colorMap, setColorMap, nodes, setNodes)}
     <div className="absolute bg-white bg-opacity-10 left-1 top-1 p-1 rounded-md">
       Viewport : {viewport[0].toFixed(2)} {viewport[1].toFixed(2)}<br />
@@ -749,6 +724,32 @@ export default function Home(){
     </div>
   </div>
 }
+
+const LineBetweenPoints: FC<{target:{pos:[number, number];size:[number,number]}; point2:[number, number]; idx:number, zoom:number}> = ({ target, point2, idx, zoom }) => {
+  let x:number = target.pos[0] + (idx == 1 ? target.size[0] : 0);
+  let y:number = target.pos[1] + target.size[1]/2;
+  const deltaX = point2[0] - x;
+  const deltaY = point2[1] - y;
+  const gap = 12;
+  const length = Math.sqrt(deltaX * deltaX + deltaY * deltaY) - gap;
+  const angle = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
+  const dx = x + Math.cos(angle * Math.PI / 180) * (gap/2);
+  const dy = y + Math.sin(angle * Math.PI / 180) * (gap/2);
+
+  const lineStyle: CSSProperties = {
+    width: `${length}px`,
+    transform: `rotate(${angle}deg)`,
+    transformOrigin: 'left',
+    position: 'absolute',
+    left: `${dx}px`,
+    top: `${dy}px`,
+    borderRadius: '10px',
+    height: `${2*zoom}px`, // 선의 두께
+    backgroundImage: `linear-gradient(to ${idx ? 'right' : 'left'}, #FF0, #0FF)`,
+  };
+
+  return <div style={lineStyle} />;
+};
 
 const contextMenu = (colorMap:[string, string][], position: [number, number], visible: boolean, createNode:(...args:any[]) => void, setContextMenuVisible:(bool:boolean) => void) => {
   return <div className={`absolute bg-gray-800 rounded-lg border border-gray-600 ${visible ? 'visible' : 'invisible'}`} style={{left:position[0], top:position[1]}}>
