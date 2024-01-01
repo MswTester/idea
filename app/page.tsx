@@ -1,113 +1,835 @@
-import Image from 'next/image'
+'use client'
 
-export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+import { CSSProperties, FC, useEffect, useRef, useState } from "react"
+import { Node } from "./node"
+import { useWindowSize } from "usehooks-ts"
+import { generateRandomString } from "./utils"
+
+const sereneColorMap:[string, string][] = [
+    ['Resource', '#FFCC00'],
+    ['Creature', '#33DD33'],
+    ['Item', '#0099FF'],
+    ['Projectile', '#CC00FF'],
+    ['Effect', '#FF0066'],
+    ['Structure', '#3333CC'],
+    ['Vehicle', '#FF9933'],
+    ['Recipe', '#00DDDD'],
+    ['Region', '#9933FF']
+]
+
+const nodeLinkerSize = 15;
+
+export default function Home(){
+  const [colorMap, setColorMap] = useState<[string, string][]>([])
+  const {width, height} = useWindowSize()
+  const [viewport, setViewport] = useState<[number, number, number]>([0, 0, 1])
+  const [contextMenuPosition, setContextMenuPosition] = useState<[number, number]>([0, 0])
+  const [contextMenuVisible, setContextMenuVisible] = useState(false)
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [isMousedown, setIsMousedown] = useState<boolean>(false)
+  const [isDragging, setIsDragging] = useState<boolean>(false)
+  const [dragStart, setDragStart] = useState<[number, number]>([0, 0])
+  const [dragOffset, setDragOffset] = useState<[number, number]>([0, 0])
+  const [selectedNodes, setSelectedNodes] = useState<string[]>([])
+  const [mouseDraggingTarget, setMouseDraggingTarget] = useState<string>('')
+  const [keymap, setKeymap] = useState<string[]>([])
+  const [panning, setPanning] = useState<boolean>(false)
+  const [clipboard, setClipboard] = useState<Node[]>([])
+  const [navbarVisible, setNavbarVisible] = useState<boolean>(false)
+  const [targetNode, setTargetNode] = useState<[string, number]>(['', -1])
+  const [history, setHistory] = useState<Node[][]>([[]])
+  const [historyIndex, setHistoryIndex] = useState<number>(0)
+
+  const createNode = (classer: string) => {
+    let x = (contextMenuPosition[0] - (width / 2))/viewport[2] + viewport[0]
+    let y = (contextMenuPosition[1] - (height / 2))/viewport[2] + viewport[1]
+    setNodes([...nodes, new Node(classer, '', [x, y])])
+    saveHistory()
+  }
+
+  const selectNode = (id: string, shift:boolean) => {
+    setSelectedNodes(shift ? [...selectedNodes, id] : [id])
+  }
+
+  const deselectNode = (id: string, shift:boolean) => {
+    if(selectedNodes.length > 1){
+      setSelectedNodes(shift ? selectedNodes.filter(v => v !== id) : [id])
+    } else {
+      setSelectedNodes([])
+    }
+  }
+
+  const addField = (id: string) => {
+    setNodes(nodes.map(vv => {
+      if(vv.id === id){
+        return new Node(vv.classer, vv.type, vv.position, vv.id, [...vv.fields, {key:'', value:''}], vv.children, vv.thumbnail)
+      } else {
+        return vv
+      }
+    }))
+    saveHistory()
+  }
+
+  const changeFieldKey = (id: string, index: number, value: string) => {
+    setNodes(nodes.map(vv => {
+      if(vv.id === id){
+        return new Node(vv.classer, vv.type, vv.position, vv.id, vv.fields.map((vvv, iii) => {
+          if(iii === index){
+            return {key:value, value:vvv.value}
+          } else {
+            return vvv
+          }
+        }), vv.children, vv.thumbnail)
+      } else {
+        return vv
+      }
+    }))
+    saveHistory()
+  }
+
+  const changeFieldValue = (id: string, index: number, value: string) => {
+    setNodes(nodes.map(vv => {
+      if(vv.id === id){
+        return new Node(vv.classer, vv.type, vv.position, vv.id, vv.fields.map((vvv, iii) => {
+          if(iii === index){
+            return {key:vvv.key, value:value}
+          } else {
+            return vvv
+          }
+        }), vv.children, vv.thumbnail)
+      } else {
+        return vv
+      }
+    }))
+    saveHistory()
+  }
+
+  const changeNodeType = (id: string, value: string) => {
+    setNodes(nodes.map(vv => {
+      if(vv.id === id){
+        return new Node(vv.classer, value, vv.position, vv.id, vv.fields, vv.children, vv.thumbnail)
+      } else {
+        return vv
+      }
+    }))
+    saveHistory()
+  }
+
+  const changeNodeClasser = (id: string, value: string) => {
+    setNodes(nodes.map(vv => {
+      if(vv.id === id){
+        return new Node(value, vv.type, vv.position, vv.id, vv.fields, vv.children, vv.thumbnail)
+      } else {
+        return vv
+      }
+    }))
+    saveHistory()
+  }
+
+  const removeField = (id: string, index: number) => {
+    setNodes(nodes.map(vv => {
+      if(vv.id === id){
+        return new Node(vv.classer, vv.type, vv.position, vv.id, vv.fields.filter((vvv, iii) => iii !== index), vv.children, vv.thumbnail)
+      } else {
+        return vv
+      }
+    }))
+    saveHistory()
+  }
+
+  const restoreHistory = (index: number) => {
+    setNodes(history[index])
+    setHistoryIndex(index)
+  }
+
+  const saveHistory = () => {
+    setHistory([...history.slice(0, historyIndex), nodes])
+    setHistoryIndex(historyIndex + 1)
+  }
+
+  const linkNode = (from:string, to:string) => {
+    if(!nodes.find(v => v.id === from)?.children.includes(to)){
+      setNodes(nodes.map(v => {
+        if(v.id === from){
+          return new Node(v.classer, v.type, v.position, v.id, v.fields, [...v.children, to], v.thumbnail)
+        } else {
+          return v
+        }
+      }))
+      saveHistory()
+    }
+  }
+
+  const unlinkNode = (target:string, type:'head'|'tail') => {
+    setNodes(nodes.map(v => {
+      if(v.id === target && type === 'tail'){
+        return new Node(v.classer, v.type, v.position, v.id, v.fields, [], v.thumbnail)
+      } else if(v.children.includes(target) && type === 'head'){
+        return new Node(v.classer, v.type, v.position, v.id, v.fields, v.children.filter(vv => vv !== target), v.thumbnail)
+      } else {
+        return v
+      }
+    }))
+    saveHistory()
+  }
+
+  const renderNodes = () => {
+    return nodes.filter(v => {
+      let {pos, size} = getNodeTransform(v)
+      return checkAABBCollision([0, 0], [width, height], pos, size)
+    }).map((v, i) => {
+      return <div key={i} className={`rounded-lg bg-gray-600 flex flex-col justify-start items-center gap-2 absolute w-60 ${selectedNodes.includes(v.id) ? 'border-2 border-white' : ''}`}
+          style={{left: width/2 + (v.position[0] - viewport[0])*viewport[2] + (selectedNodes.includes(v.id) && mouseDraggingTarget === 'node' ? dragOffset[0] : 0),
+          top: height/2 + (v.position[1] - viewport[1])*viewport[2] + (selectedNodes.includes(v.id) && mouseDraggingTarget === 'node' ? dragOffset[1] : 0),
+          transform:`translate(-50%, -50%) scale(${viewport[2]})`}}>
+          <div className={`rounded-tr-lg rounded-tl-lg p-2 w-full flex justify-center items-center font-semibold`}
+          style={{backgroundColor:colorMap[colorMap.findIndex(vv => vv[0] === v.classer)][1] || '#777'}}
+          onMouseMove={e => {
+            if(isDragging && mouseDraggingTarget === 'node' && !selectedNodes.includes(v.id)){
+              selectNode(v.id, e.shiftKey)
+            }
+          }}
+          id="node"
+          onMouseUp={e => {
+            if(mouseDraggingTarget === 'node'){
+              if(!isDragging){
+                if(!selectedNodes.includes(v.id)) {
+                  selectNode(v.id, e.shiftKey)
+                } else {
+                  deselectNode(v.id, e.shiftKey)
+                }
+              } else {
+                setNodes(nodes.map(vv => {
+                  if(selectedNodes.includes(vv.id)){
+                    return new Node(vv.classer, vv.type, [vv.position[0] + (dragOffset[0])/viewport[2], vv.position[1] + (dragOffset[1])/viewport[2]], vv.id, vv.fields, vv.children, vv.thumbnail)
+                  } else {
+                    return vv
+                  }
+                  }))
+                saveHistory()
+              }
+            }
+          }}
           >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+            <select name="" id="node" value={v.classer} className="bg-transparent text-center focus:outline-none" onChange={e => changeNodeClasser(v.id, e.target.value)}>
+              {colorMap.map((vv, ii) => {
+                return <option key={ii} value={vv[0]} className="bg-black">{vv[0]}</option>
+              })}
+            </select>
+          </div>
+          <input type="text" name="" id="" className="bg-transparent border-none p-1 focus:outline-none" style={{width:'90%'}} placeholder="Type" value={v.type} onChange={e => changeNodeType(v.id, e.target.value)}/>
+          {v.fields.map((vv, ii) => {
+            return <div className="flex flex-row items-center justify-around" key={ii}>
+              <input type="text" name="" id="" className="bg-[#ffffff11] rounded-md border-none p-1 focus:outline-none" style={{width:'30%'}} placeholder="Field"
+              onChange={e => changeFieldKey(v.id, ii, e.target.value)} value={vv.key}/>
+              <input type="text" name="" id="" className="bg-[#ffffff11] rounded-md border-none p-1 focus:outline-none" style={{width:'50%'}} placeholder="Value"
+              onChange={e => changeFieldValue(v.id, ii, e.target.value)} value={vv.value}/>
+              <button className="bg-[#ffffff11] rounded-md border-none p-1 hover:bg-[#ffffff22]" style={{width:'10%'}} onClick={e => removeField(v.id, ii)}>-</button>
+            </div>
+          })}
+          <button className="w-full bg-[#ffffff11] rounded-br-lg rounded-bl-lg hover:bg-[#ffffff22] font-bold text-2xl"
+          onClick={e => addField(v.id)}>+</button>
+          <div className="absolute bg-[#00ffff] left-0 rounded-sm"
+          style={{width:nodeLinkerSize, height:nodeLinkerSize, transform:`translate(-50%, -50%) rotate(45deg)`, top:'50%'}}
+          onMouseDown={e => {
+            setTargetNode([v.id, 0])
+          }}
+          onMouseUp={e => {
+            if(targetNode[0] !== '' && targetNode[0] !== v.id && targetNode[1] !== -1 && targetNode[1] == 1){
+              linkNode(targetNode[0], v.id)
+            }
+          }}
+          onClick={e => {
+            if(e.altKey){
+              unlinkNode(v.id, 'head')
+            }
+          }}
+          ></div>
+          <div className="absolute bg-[#ffff00] right-0 rounded-sm"
+          style={{width:nodeLinkerSize, height:nodeLinkerSize, transform:`translate(50%, -50%) rotate(45deg)`, top:'50%'}}
+          onMouseDown={e => {
+            setTargetNode([v.id, 1])
+          }}
+          onMouseUp={e => {
+            if(targetNode[0] !== '' && targetNode[0] !== v.id && targetNode[1] !== -1 && targetNode[1] == 0){
+              linkNode(v.id, targetNode[0])
+            }
+          }}
+          onClick={e => {
+            if(e.altKey){
+              unlinkNode(v.id, 'tail')
+            }
+          }}
+          ></div>
         </div>
+    })
+  }
+
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      setContextMenuPosition([e.clientX, e.clientY])
+      setContextMenuVisible(true)
+    }
+    window.addEventListener('contextmenu', handleContextMenu)
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu)
+    }
+  }, [contextMenuPosition, contextMenuVisible])
+
+  useEffect(() => {
+    const handleMousemove = (e: MouseEvent) => {
+      if(isMousedown){
+        if(!isDragging){
+          setIsDragging(true)
+        }
+        setDragOffset([e.clientX - dragStart[0], e.clientY - dragStart[1]])
+      }
+    }
+    const handleMouseup = (e: MouseEvent) => {
+      if(isDragging){
+        setIsDragging(false)
+        setDragOffset([0, 0])
+      }
+      setMouseDraggingTarget('')
+      setIsMousedown(false)
+      setTargetNode(['', -1])
+    }
+    const handleMousedown = (e: MouseEvent) => {
+      setIsMousedown(true)
+      setDragStart([e.clientX, e.clientY])
+      if((e.target as HTMLElement).id === 'bg'){
+        setMouseDraggingTarget('bg')
+      } else if ((e.target as HTMLElement).id === 'node'){
+        setMouseDraggingTarget('node')
+      }
+    }
+    document.addEventListener('mousedown', handleMousedown)
+    document.addEventListener('mousemove', handleMousemove)
+    window.addEventListener('mouseup', handleMouseup)
+    return () => {
+      document.removeEventListener('mousedown', handleMousedown)
+      document.removeEventListener('mousemove', handleMousemove)
+      window.removeEventListener('mouseup', handleMouseup)
+    }
+  }, [isMousedown, isDragging, dragStart])
+
+  useEffect(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      if(e.altKey) e.preventDefault()
+      if(e.code === 'Tab') {
+        e.preventDefault()
+        setNavbarVisible(!navbarVisible)
+      }
+      if(!keymap.includes(e.key)){
+        setKeymap([...keymap, e.key])
+      }
+    }
+    const handleKeyup = (e: KeyboardEvent) => {
+      setKeymap(keymap.filter(v => v !== e.key))
+    }
+    window.addEventListener('keydown', handleKeydown)
+    window.addEventListener('keyup', handleKeyup)
+    return () => {
+      window.removeEventListener('keydown', handleKeydown)
+      window.removeEventListener('keyup', handleKeyup)
+    }
+  }, [keymap, navbarVisible])
+
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if(keymap.includes(' ')){
+        setViewport([viewport[0] - e.deltaX, viewport[1] - e.deltaY, viewport[2]])
+      } else {
+        let zoom = (viewport[2] - e.deltaY/1000)
+        setViewport([viewport[0], viewport[1], zoom < 0.1 ? 0.1 : zoom])
+      }
+    }
+    window.addEventListener('wheel', handleWheel)
+    return () => {
+      window.removeEventListener('wheel', handleWheel)
+    }
+  }, [viewport, keymap])
+
+  useEffect(() => {
+    if(keymap.includes(' ')){
+      setPanning(true)
+      document.body.style.cursor = 'grab'
+    } else {
+      setPanning(false)
+      document.body.style.cursor = 'default'
+    }
+  }, [keymap])
+
+  const handlePanning = (e: MouseEvent) => {
+    if(panning && isDragging){
+      setViewport([viewport[0] - (e.movementX)/viewport[2], viewport[1] - (e.movementY)/viewport[2], viewport[2]])
+    }
+  }
+
+  const checkAABBCollision = (a: [number, number], b: [number, number], c: [number, number], d: [number, number]) => {
+      return a[0] < c[0] + d[0] && a[0] + b[0] > c[0] && a[1] < c[1] + d[1] && a[1] + b[1] > c[1]
+  }
+
+  const getNodeTransform = (node: Node) => {
+    let selected = selectedNodes.includes(node.id) && mouseDraggingTarget === 'node'
+    let size:[number, number] = [240*viewport[2], (120 + node.fields.length * 40)*viewport[2]]
+    let pos:[number, number] = [
+      (width/2 + (node.position[0] - viewport[0])*viewport[2]) - size[0]/2 + (selected ? dragOffset[0] : 0),
+      (height/2 + (node.position[1] - viewport[1])*viewport[2]) - size[1]/2 + (selected ? dragOffset[1] : 0)
+    ]
+    return {pos, size}
+  }
+
+  useEffect(() => {
+    const handleDelete = (e: KeyboardEvent) => {
+      if(e.key === 'Delete'){
+        e.preventDefault()
+        let newNodes = [...nodes]
+        selectedNodes.forEach(v => {
+          newNodes = newNodes.map(vv => {if(vv.children.includes(v)){
+              return new Node(vv.classer, vv.type, vv.position, vv.id, vv.fields, vv.children.filter(vv => vv !== v), vv.thumbnail)
+            } else {
+              return vv
+            }
+          })
+        })
+        setNodes(newNodes.filter(v => !selectedNodes.includes(v.id)))
+        setSelectedNodes([])
+        saveHistory()
+      }
+    }
+    document.addEventListener('keydown', handleDelete)
+    return () => {
+      document.removeEventListener('keydown', handleDelete)
+    }
+  }, [nodes, selectedNodes, history, historyIndex])
+
+  useEffect(() => {
+    const handleCopy = (e: KeyboardEvent) => {
+      if(e.code === 'KeyC' && e.ctrlKey){
+        setClipboard(nodes.filter(v => selectedNodes.includes(v.id)))
+      }
+    }
+    document.addEventListener('keydown', handleCopy)
+    return () => {
+      document.removeEventListener('keydown', handleCopy)
+    }
+  }, [nodes, selectedNodes])
+
+  useEffect(() => {
+    const handleCut = (e: KeyboardEvent) => {
+      if(e.code === 'KeyX' && e.ctrlKey){
+        setClipboard(nodes.filter(v => selectedNodes.includes(v.id)))
+        setNodes(nodes.filter(v => !selectedNodes.includes(v.id)))
+        setSelectedNodes([])
+        saveHistory()
+      }
+    }
+    document.addEventListener('keydown', handleCut)
+    return () => {
+      document.removeEventListener('keydown', handleCut)
+    }
+  }, [nodes, selectedNodes, history, historyIndex])
+
+  useEffect(() => {
+    const handlePaste = (e: KeyboardEvent) => {
+      if(e.code === 'KeyV' && e.ctrlKey){
+        setNodes([...nodes, ...clipboard.map(v => new Node(v.classer, v.type, [v.position[0] + 10, v.position[1] + 10], generateRandomString(10), v.fields, v.children, v.thumbnail))])
+        setSelectedNodes(clipboard.map(v => v.id))
+        saveHistory()
+      }
+    }
+    document.addEventListener('keydown', handlePaste)
+    return () => {
+      document.removeEventListener('keydown', handlePaste)
+    }
+  }, [nodes, clipboard, history, historyIndex])
+
+  useEffect(() => {
+    const handleDuplicate = (e: KeyboardEvent) => {
+      if(e.code === 'KeyD' && e.ctrlKey){
+        e.preventDefault()
+        let add = nodes.filter(v => selectedNodes.includes(v.id)).map(v => new Node(v.classer, v.type, [v.position[0] + 10, v.position[1] + 10], generateRandomString(10), v.fields, v.children, v.thumbnail))
+        setNodes([...nodes, ...add])
+        setSelectedNodes(add.map(v => v.id))
+        saveHistory()
+      }
+    }
+    document.addEventListener('keydown', handleDuplicate)
+    return () => {
+      document.removeEventListener('keydown', handleDuplicate)
+    }
+  }, [nodes, selectedNodes, history, historyIndex])
+
+  useEffect(() => {
+    const handleUndo = (e: KeyboardEvent) => {
+      if(e.code === 'KeyZ' && e.ctrlKey){
+        e.preventDefault()
+        if(historyIndex > 0){
+          restoreHistory(historyIndex - 1)
+        }
+      }
+    }
+    document.addEventListener('keydown', handleUndo)
+    return () => {
+      document.removeEventListener('keydown', handleUndo)
+    }
+  }, [historyIndex, history])
+
+  useEffect(() => {
+    const handleRedo = (e: KeyboardEvent) => {
+      if(e.code === 'KeyY' && e.ctrlKey){
+        e.preventDefault()
+        if(historyIndex < history.length - 1){
+          restoreHistory(historyIndex + 1)
+        }
+      }
+    }
+    document.addEventListener('keydown', handleRedo)
+    return () => {
+      document.removeEventListener('keydown', handleRedo)
+    }
+  }, [historyIndex, history])
+
+  useEffect(() => {
+    const handleSelectAll = (e: KeyboardEvent) => {
+      if(e.code === 'KeyA' && e.ctrlKey){
+        e.preventDefault()
+        setSelectedNodes(nodes.map(v => v.id))
+      }
+    }
+    document.addEventListener('keydown', handleSelectAll)
+    return () => {
+      document.removeEventListener('keydown', handleSelectAll)
+    }
+  }, [nodes])
+
+  useEffect(() => {
+    const handleDeselectAll = (e: KeyboardEvent) => {
+      if(e.key === 'Escape'){
+        setSelectedNodes([])
+      }
+    }
+    document.addEventListener('keydown', handleDeselectAll)
+    return () => {
+      document.removeEventListener('keydown', handleDeselectAll)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleResetViewport = (e: KeyboardEvent) => {
+      if(e.code === 'KeyR' && e.ctrlKey){
+        e.preventDefault()
+        setViewport([0, 0, 1])
+      }
+    }
+    document.addEventListener('keydown', handleResetViewport)
+    return () => {
+      document.removeEventListener('keydown', handleResetViewport)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleZoomIn = (e: KeyboardEvent) => {
+      if(e.code === 'Equal' && e.ctrlKey){
+        e.preventDefault()
+        setViewport([viewport[0], viewport[1], viewport[2] + 0.1])
+      }
+    }
+    document.addEventListener('keydown', handleZoomIn)
+    return () => {
+      document.removeEventListener('keydown', handleZoomIn)
+    }
+  }, [viewport])
+
+  useEffect(() => {
+    const handleZoomOut = (e: KeyboardEvent) => {
+      if(e.code === 'Minus' && e.ctrlKey){
+        e.preventDefault()
+        setViewport([viewport[0], viewport[1], viewport[2] - 0.1])
+      }
+    }
+    document.addEventListener('keydown', handleZoomOut)
+    return () => {
+      document.removeEventListener('keydown', handleZoomOut)
+    }
+  }, [viewport])
+
+  useEffect(() => {
+    const handleZoomReset = (e: KeyboardEvent) => {
+      if(e.code === 'Digit0' && e.ctrlKey){
+        e.preventDefault()
+        setViewport([viewport[0], viewport[1], 1])
+      }
+    }
+    document.addEventListener('keydown', handleZoomReset)
+    return () => {
+      document.removeEventListener('keydown', handleZoomReset)
+    }
+  }, [viewport])
+
+  useEffect(() => {
+    const handleZoomFit = (e: KeyboardEvent) => {
+      if(e.code === 'Digit9' && e.ctrlKey){
+        e.preventDefault()
+        let minX = Math.min(...nodes.map(v => v.position[0]))
+        let minY = Math.min(...nodes.map(v => v.position[1]))
+        let maxX = Math.max(...nodes.map(v => v.position[0]))
+        let maxY = Math.max(...nodes.map(v => v.position[1]))
+        let width = maxX - minX
+        let height = maxY - minY
+        let zoom = Math.min(window.innerWidth/width, window.innerHeight/height)
+        setViewport([(minX + maxX)/2, (minY + maxY)/2, zoom])
+      }
+    }
+    document.addEventListener('keydown', handleZoomFit)
+    return () => {
+      document.removeEventListener('keydown', handleZoomFit)
+    }
+  }, [nodes])
+
+  useEffect(() => {
+    const handleInit = (e: KeyboardEvent) => {
+      if(e.code === 'KeyI' && e.ctrlKey){
+        e.preventDefault()
+        setColorMap(sereneColorMap)
+      }
+    }
+    document.addEventListener('keydown', handleInit)
+    return () => {
+      document.removeEventListener('keydown', handleInit)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleMouseUp = (e: MouseEvent) => {
+      if(mouseDraggingTarget === 'bg' && isDragging && !panning){
+        let selected:string[] = []
+        let left = dragOffset[0] >= 0 ? dragStart[0] : dragStart[0] + dragOffset[0]
+        let top = dragOffset[1] >= 0 ? dragStart[1] : dragStart[1] + dragOffset[1]
+        let scale:[number, number] = [Math.abs(dragOffset[0]), Math.abs(dragOffset[1])]
+        nodes.forEach(v => {
+          let {pos, size} = getNodeTransform(v)
+          checkAABBCollision([left, top], scale, pos, size) && selected.push(v.id)
+        })
+        setSelectedNodes(selected)
+      }
+    }
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragging, dragOffset, dragStart, mouseDraggingTarget, nodes, viewport, width, height, panning])
+
+  const GridCanvas = () => {
+    const canvasRef = useRef(null);
+  
+    useEffect(() => {
+      const canvas = canvasRef.current as unknown as HTMLCanvasElement;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+          return;
+      }
+  
+      // 캔버스 초기화
+      ctx.clearRect(0, 0, width, height);
+  
+      // 그리드 간격 설정
+      const gridSize = 100;
+      const scaledGridSize = gridSize * viewport[2];
+  
+      // 화면 중앙을 기준으로 그리드 그리기
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const startX = centerX - (viewport[0] * viewport[2]);
+      const startY = centerY - (viewport[1] * viewport[2]);
+
+      // 그리드 그리기
+      ctx.strokeStyle = '#111';
+      ctx.beginPath();
+      for (let x = startX % scaledGridSize; x < width; x += scaledGridSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = startY % scaledGridSize; y < height; y += scaledGridSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    }, [width, height, viewport]);
+
+    return <canvas ref={canvasRef} width={width} height={height} className="bg-black" style={{ position: 'absolute' }} id="bg"
+    onMouseDown={e => {
+      if(e.target === e.currentTarget){
+        setSelectedNodes([])
+        setContextMenuVisible(false)
+      }
+    }}
+    onMouseUp={e => {
+      if(e.target === e.currentTarget){
+        setContextMenuVisible(false)
+      }
+    }}
+    onMouseMove={e => handlePanning(e as unknown as MouseEvent)}/>;
+  };
+
+  const LineBetweenPoints: FC<{target:{pos:[number, number];size:[number,number]}; point2:[number, number]; idx:number}> = ({ target, point2, idx }) => {
+    let x:number = target.pos[0] + (idx == 1 ? target.size[0] : 0);
+    let y:number = target.pos[1] + target.size[1]/2;
+    const deltaX = point2[0] - x;
+    const deltaY = point2[1] - y;
+    const gap = 12;
+    const length = Math.sqrt(deltaX * deltaX + deltaY * deltaY) - gap;
+    const angle = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
+    const dx = x + Math.cos(angle * Math.PI / 180) * (gap/2);
+    const dy = y + Math.sin(angle * Math.PI / 180) * (gap/2);
+
+    const lineStyle: CSSProperties = {
+      width: `${length}px`,
+      transform: `rotate(${angle}deg)`,
+      transformOrigin: 'left',
+      position: 'absolute',
+      left: `${dx}px`,
+      top: `${dy}px`,
+      borderRadius: '10px',
+      height: `${2*viewport[2]}px`, // 선의 두께
+      backgroundImage: `linear-gradient(to ${idx ? 'right' : 'left'}, #FF0, #0FF)`,
+    };
+
+    return <div style={lineStyle} />;
+  };
+
+  const renderLines = () => {
+    return nodes.filter(v => {
+      let {pos, size} = getNodeTransform(v)
+      let checkChildren = v.children.map(vv => {
+        let target = getNodeTransform(nodes.find(vvv => vvv.id === vv) as Node)
+        return checkAABBCollision([0, 0], [width, height], target.pos, target.size)
+      })
+      return v.children.length > 0 && checkAABBCollision([0, 0], [width, height], pos, size) || checkChildren.includes(true)
+    }).map((v, i) => {
+      return v.children.map((vv, ii) => {
+        let tailnode = nodes.find(vvv => vvv.id === vv)
+        if(tailnode){
+          let me = getNodeTransform(v)
+          let target = getNodeTransform(tailnode)
+          let x = target.pos[0]
+          let y = target.pos[1] + target.size[1]/2
+          return <LineBetweenPoints target={me} point2={[x, y]} idx={1} key={ii}/>
+        } else {
+          return null
+        }
+      })
+    })
+  }
+
+  return <div className="w-full h-full bg-black flex select-none text-white box-border overflow-hidden" id="bg">
+    {GridCanvas()}
+    {renderNodes()}
+    {renderLines()}
+    {targetNode[0] !== '' && targetNode[1] !== -1 && <LineBetweenPoints
+      target={getNodeTransform(nodes.find(v => v.id === targetNode[0]) as Node)}
+      point2={[dragStart[0] + dragOffset[0], dragStart[1] + dragOffset[1]]}
+      idx={targetNode[1]}
+    />}
+    {contextMenu(colorMap, contextMenuPosition, contextMenuVisible, createNode, setContextMenuVisible)}
+    {isDragging && mouseDraggingTarget === 'bg' && !panning && <div className="bg-[#ffffff22] absolute border border-white rounded-md"
+    style={{
+      left: dragOffset[0] >= 0 ? dragStart[0] : dragStart[0] + dragOffset[0],
+      top: dragOffset[1] >= 0 ? dragStart[1] : dragStart[1] + dragOffset[1],
+      width: Math.abs(dragOffset[0]),
+      height: Math.abs(dragOffset[1]),
+    }}></div>}
+    {!navbarVisible && <div className="absolute bg-white bg-opacity-10 right-1 top-1 p-1 rounded-md">Press "Tab" to show menu.</div>}
+    {navbarVisible && navbar(colorMap, setColorMap, nodes, setNodes)}
+    <div className="absolute bg-white bg-opacity-10 left-1 top-1 p-1 rounded-md">
+      Viewport : {viewport[0].toFixed(2)} {viewport[1].toFixed(2)}<br />
+      Zoom : {Math.round(viewport[2]*100)}%
+    </div>
+  </div>
+}
+
+const contextMenu = (colorMap:[string, string][], position: [number, number], visible: boolean, createNode:(...args:any[]) => void, setContextMenuVisible:(bool:boolean) => void) => {
+  return <div className={`absolute bg-gray-800 rounded-lg border border-gray-600 ${visible ? 'visible' : 'invisible'}`} style={{left:position[0], top:position[1]}}>
+    {colorMap.map((v, i) => {
+      return <div key={i} className="p-2 hover:bg-gray-700 rounded-lg cursor-pointer"
+      onClick={e => {
+        createNode(v[0])
+        setContextMenuVisible(false)
+      }}>{v[0]}</div>
+    })}
+  </div>
+}
+
+const navbar = (colorMap:[string, string][], setColorMap:React.Dispatch<React.SetStateAction<[string, string][]>>,
+  nodes:Node[], setNodes:React.Dispatch<React.SetStateAction<Node[]>>) => {
+  return <div className="w-60 h-full bg-slate-800 absolute right-0 p-2 flex flex-col gap-2 justify-start items-center overflow-auto">
+      <div className="flex flex-row justify-center items-center gap-2 w-full">
+        <button className="flex-1 p-1 bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md" onClick={e => setNodes([])}>New</button>
+        <button className="flex-1 p-1 bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md"
+        onClick={e => {
+          let json = JSON.stringify(nodes)
+          let file = new Blob([json], {type: 'application/json'})
+          let a = document.createElement('a')
+          a.href = URL.createObjectURL(file)
+          a.download = 'save.json'
+          a.click()
+        }}>Save</button>
+        <button className="flex-1 p-1 bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md" onClick={e => {
+          const file = document.createElement('input')
+          file.type = 'file'
+          file.accept = '.json'
+          file.onchange = e => {
+            let reader = new FileReader()
+            reader.onload = e => {
+              let json = e.target?.result as string
+              setNodes(JSON.parse(json).map((v: any) => Object.assign(new Node('', '', [0, 0]), v)))
+            }
+            reader.readAsText((e.target as HTMLInputElement).files?.item(0) as Blob)
+          }
+          file.click()
+        }}>Load</button>
       </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  )
+      {colorMap.map((v, i) => {
+        return <div key={i} className="flex flex-row justify-center items-center gap-2 w-full">
+          <input className="p-1 bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md focus:outline-none" style={{width:130}} type="text" name="" id="" value={v[0]}
+          onChange={e => {
+            setColorMap(colorMap.map((vv, ii) => {
+              if(ii === i){
+                return [e.target.value, vv[1]]
+              } else {
+                return vv
+              }
+            }))
+            setNodes(nodes.map(vv => {
+              if(vv.classer === v[0]){
+                return new Node(e.target.value, vv.type, vv.position, vv.id, vv.fields, vv.children, vv.thumbnail)
+              } else {
+                return vv
+              }
+            }))
+          }} />
+          <input type="color" name="" id="" className="flex-1 p-1 bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md focus:outline-none" value={v[1]}
+          onChange={e => {
+              setColorMap(colorMap.map((vv, ii) => {
+                  if(ii === i){
+                    return [vv[0], e.target.value]
+                  } else {
+                    return vv
+                  }
+              }))
+          }}/>
+          <button className="bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md text-2xl" style={{width:30}}
+          onClick={e => {
+            setColorMap(colorMap.filter((vv, ii) => ii !== i))
+            setNodes(nodes.filter(vv => vv.classer !== v[0]))
+          }}>-</button>
+        </div>
+      })}
+    <button className="w-full bg-[#ffffff11] rounded-md hover:bg-[#ffffff22] font-bold text-2xl"
+    onClick={e => {
+      setColorMap([...colorMap, ['', '#ffffff']])
+    }}>+</button>
+  </div>
 }
