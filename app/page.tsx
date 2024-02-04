@@ -646,7 +646,7 @@ export default function Home(){
       const startY = centerY - (viewport[1] * viewport[2]);
 
       // 그리드 그리기
-      ctx.strokeStyle = '#111';
+      ctx.strokeStyle = '#333';
       ctx.beginPath();
       for (let x = startX % scaledGridSize; x < width; x += scaledGridSize) {
         ctx.moveTo(x, 0);
@@ -770,7 +770,7 @@ const navbar = (colorMap:[string, string][], setColorMap:React.Dispatch<React.Se
         <button className="flex-1 p-1 bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md" onClick={e => setNodes([])}>New</button>
         <button className="flex-1 p-1 bg-[#ffffff11] hover:bg-[#ffffff22] rounded-md"
         onClick={e => {
-          let json = JSON.stringify(nodes)
+          let json = JSON.stringify({nodes, maps:colorMap})
           let file = new Blob([json], {type: 'application/json'})
           let a = document.createElement('a')
           a.href = URL.createObjectURL(file)
@@ -784,8 +784,9 @@ const navbar = (colorMap:[string, string][], setColorMap:React.Dispatch<React.Se
           file.onchange = e => {
             let reader = new FileReader()
             reader.onload = e => {
-              let json = e.target?.result as string
-              setNodes(JSON.parse(json).map((v: any) => Object.assign(new Node('', '', [0, 0]), v)))
+              let json = JSON.parse(e.target?.result as string)
+              setNodes(json.nodes.map((v: any) => Object.assign(new Node('', '', [0, 0]), v)))
+              setColorMap(json.maps)
             }
             reader.readAsText((e.target as HTMLInputElement).files?.item(0) as Blob)
           }
