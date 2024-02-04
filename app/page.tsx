@@ -174,7 +174,7 @@ export default function Home(){
   }
 
   const renderNodes = () => {
-    return nodes.filter(v => {
+    return nodes.sort((a, b) => a.position[1] - b.position[1]).filter(v => {
       let {pos, size} = getNodeTransform(v)
       return checkAABBCollision([0, 0], [width, height], pos, size)
     }).map((v, i) => {
